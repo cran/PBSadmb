@@ -1,163 +1,522 @@
-# Authors: Jon T. Schnute, Rowan Haigh
+# Authors: Jon T. Schnute, Rowan Haigh, Alex Couture-Beil
+
+#admb-----------------------------------2012-10-31
+# Starts the primary GUI interface
+#-----------------------------------------------RH
+admb <- function(prefix="",wdf="admbWin.txt",optfile="ADopts.txt"){
+	.initOptions()
+	readADopts()
+	pkg="PBSadmb"
+	if (!require(PBSmodelling))
+		stop("!!!!!Install package PBSmodelling!!!!!")
+	require(tcltk,quietly=TRUE)
+
+	#TODO rename to something else - too similar to .PBSadmb
+	assign("PBSadmb",list(pkg=pkg,call=match.call(),args=args(admb),useCols=NULL),envir=.GlobalEnv)
+
+	pdir <- system.file(package=pkg)          # package directory
+	wdir <- paste(pdir,"/win",sep="")         # window description file directory
+	edir <- paste(pdir,"/examples",sep="")    # examples directory
+	tdir <- tempdir()                         # temporary working directory
+	twdf <- paste(tdir,"/",wdf,sep="")        # temporary window description file
+	twdf <- convSlashes(twdf,os="unix")
+
+	stripExt = function(x) { return(sub("[.].{1,3}$", "", x)) }
+
+	win.filename <- paste(wdir,wdf,sep="/")
+	temp <- readLines(win.filename)
+	
+	# insert examples into window description file menuitems
+	etpl <- basename(Sys.glob(file.path(edir,"*.tpl"))) # TPL files in examples directory
+	eprf <- stripExt(etpl)                              # strip off extensions
+	enew=character(0)
+	edir <- gsub( "\\\\", "/", edir )
+	for (i in eprf) 
+		enew=c(enew,paste("menuitem label=",i," function=doAction action=\"copyFiles(`",
+			i,".`,srcdir=`",edir,"`); convOS(paste(`",i,"`,c(`.tpl`,`.dat`,`.pin`,`.r`),sep=``))\"",sep=""))
+	temp <- gsub("@nitems",length(eprf),temp)
+	temp <- gsub("@menuitems",paste(enew,collapse="\n\t"),temp)
+
+	#install menu (windows only)
+	if( .Platform$OS.type == "windows" ) {
+		install.menu <- "menu nitems=1 label=Install"
+		install.menu <- c( install.menu, "menuitem label=\"ADMB and MinGW for Windows\" function=doAction action=installADMB()" )
+		temp <- gsub( "@install", paste( install.menu, collapse="\n" ), temp )
+	} else {
+		temp <- gsub( "@install", "", temp )
+	}
+	temp = gsub("@wdf",twdf,temp)
+	
+	#create the window (from temp string)
+	temp <- unlist( strsplit(temp, "\n" ) )
+	#createWin(twdf, TRUE)
+	writeLines(temp,con=twdf)
+#browser();return()
+	createWin(twdf)
+
+	#set some values
+	.load.prefix.droplist()
+	loadOptionsGUI( .PBSadmb )
+	isOK <- .win.checkADopts()
+
+	if( isOK == FALSE && .Platform$OS.type == "windows" ) {
+		cat( "\nADMB or GCC are not installed in the default location - Windows users can run\n" )
+		cat( "installADMB() automatically download and install ADMB and MinGW\n" )
+		cat( "If ADMB is installed elsewhere, you can manually set the ADMB or GCC path values\n" )
+		cat( "in the GUI to point to your own installations.\n" )
+	}
+
+	#TODO need centralized window variable init (is it done anywhere?)
+	setWinVal( list( currentdir.values = getwd() ) )
+	setWinVal( list( currentdir = getwd() ) )
+	setWinVal( list( optfile = optfile ) )
+
+	invisible() }
+#---------------------------------------------admb
 
 .initOptions <- function()
 {
 	#don't re-init
 	if( exists( ".PBSadmb" ) ) 
 		return()
-
-	#first setup initial option values
-	initial.options <- list()
-
-	#search vector of programs for the first found path, if nothing is found return "failed" object
-	.guessPath <- function( programs, includefilename = FALSE, failed = "unknown" )
-	{
-		for( p in programs ) {
-			tmp <- findProgram( p, includefilename )
-			if( is.null( tmp ) == FALSE )
-				return( tmp )
-		}
-		return( failed )
-	}
-
-	#guess ADMB path
-	initial.options$admpath <- .guessPath( "tpl2rem" )
-	
-	#guess gcc path
-	initial.options$gccpath <- .guessPath( "g++" )
-	
-	#guess editor
-	initial.options$editor <- .guessPath( c( "gvim", "kate", "notepad" ), TRUE )
-
-	#create instance of option manager - use this to get/set/save/load options
-	.PBSadmb <<- new( "PBSoptions", filename = "ADopts.txt", initial.options = initial.options, gui.prefix="" )
+	readADopts()
 }
 
-#admb-----------------------------------2009-07-21
-# Starts the primary GUI interface
-#-----------------------------------------------RH
-admb=function(prefix="",wdf="admbWin.txt",optfile="ADopts.txt"){
-	.initOptions()
-	pkg="PBSadmb"
-	if (!require(PBSmodelling))
-		stop("!!!!!Install package PBSmodelling!!!!!")
 
-	#TODO rename to something else - too similar to .PBSadmb
-	assign("PBSadmb",list(pkg=pkg,func="admb",useCols=NULL),envir=.GlobalEnv)
-	#if (exists(".ADopts",envir=.GlobalEnv)) rm(.ADopts,envir=.GlobalEnv) # remove previous hidden object
-
-	pdir <- system.file(package=pkg)                 # package directory
-	wdir <- paste(pdir,"/win",sep="")                # window description file directory
-	adir <- paste(pdir,"/admb/admb-win32-mingw",sep="")               # ADMB directory
-	edir <- paste(pdir,"/examples",sep="")           # examples directory
-	tdir <- tempdir(); tdir <- gsub("\\\\","/",tdir) # temporary directory for R
-	stripExt=function(x) { return(sub("[.].{1,3}$", "", x)) }
-
-	wnam <- paste(wdir,wdf,sep="/")
-	wtmp <- paste(tdir,wdf,sep="/")
-	temp <- readLines(wnam)
-	temp <- gsub("@editADfile",paste("\"editADfile(`",wtmp,"`)\"",sep=""),temp)
-	if (is.null(prefix) || prefix=="") prefix="vonb"
-	temp <- gsub("@prefix",prefix,temp)
-	if( file.exists( adir ) ) {
-		temp <- gsub("@admpath",adir,temp)
-		setOptions( .PBSadmb, admpath = adir )
-	} else {
-		temp <- gsub("@admpath","\"fillme\"",temp)
-		if( .Platform$OS.type == "windows" ) {
-			cat( "\nADMB is not installed in the default location - Windows users can run\n" )
-			cat( "installADMB() to automatically download and extract files into PBSadmb's\n" )
-			cat( "R library location. If ADMB is installed elsewhere, you can manually set\n" )
-			cat( "the ADM path value in the GUI to point to your own installation.\n\n" )
-		}
+#given any number of directories, return the first one that actually exists; null if nothing else is found
+#ex: .findDownloadedSoftware( "c:/fake/dir", "c:/windows", "c:/") returns "c:/windows"
+.findDownloadedSoftware <- function( ... )
+{
+	.findDownloadedSoftwareHelper <- function( name )
+	{
+		if( file.exists( name ) )
+			return( name )
+		return( NULL )
 	}
-	temp <- gsub("@optfile",optfile,temp)
-	#---examples---
-	etpl <- basename(Sys.glob(file.path(edir,"*.tpl"))) # TPL files in examples directory
-	eprf <- stripExt(etpl)                              # strip off extensions
-	enew=character(0)
-	for (i in eprf) 
-		enew=c(enew,paste("menuitem label=",i," function=doAction action=\"copyFiles(`",
-			i,".`,dir0=`",edir,"`); convOS(paste(`",i,"`,c(`.tpl`,`.dat`,`.pin`,`.r`),sep=``))\"",sep=""))
-	temp <- gsub("@nitems",length(eprf),temp)
-	temp <- gsub("@menuitems",paste(enew,collapse="\n\t"),temp)
-	temp <- gsub("@pkg",pkg,temp)
-	writeLines(temp,con=wtmp)
-	createWin(wtmp) #TODO use astext=TRUE
-	.load.prefix.droplist()
-	loadOptionsGUI( .PBSadmb )
-	.win.checkADopts()
-	invisible() }
-#---------------------------------------------admb
+	for( i in c( ... ) ) {
+		path <- .findDownloadedSoftwareHelper( i )
+		if( is.null( path ) == FALSE )
+			return( path )
+	}
+	return( NULL )
+}
 
-#repopulates droplist with all prefixes in current directory
-#TODO we might want a "refresh" button on the GUI to call this
-#ideally we could have the droplist call a function *BEFORE* it drops down - thus refreshing the list
+# Repopulates droplist with all prefixes in current directory
+# TODO we might want a "refresh" button on the GUI to call this
+# ideally we could have the droplist call a function *BEFORE* 
+# it drops down - thus refreshing the list
 .load.prefix.droplist <- function()
 {
 	choices <- findPrefix( ".tpl" )
 	setWinVal( list( prefix.values = choices ) )
-	setWinVal( list( prefix = choices[ 1 ] ) )
+	if (any(choices=="vonb")) ch1 = grep("vonb",choices) else ch1 = 1
+	setWinVal( list( prefix = choices[ ch1 ] ) )
+}
+
+#given a vector of paths, return the last directory name of each path
+.getDirName <- function( path )
+{
+	dirname <- gsub("\\\\", "/", path )
+	return( unlist( lapply( strsplit( dirname, "/" ), function(x) x[length(x)] ) ) )
 }
 
 installADMB <- function()
 {
 	if( .Platform$OS.type != "windows" )
-		stop( "automatic installation of ADMB is only available for windows. Unix users must visit the admb website and install the corresponding copy manually" )
+		stop( "installADMB is only supported for windows. Please refer to User Guide for installation instructions" )
 
-	oldwd <- getwd()
-	url <- "http://admb-project.googlecode.com/files/admb-9.0.363-win32-mingw-gcc3.4.zip"
+	if (!require(PBSmodelling))
+		stop("!!!!!Install package PBSmodelling!!!!!")
+
+	#default install location
 	download_to <- system.file(package="PBSadmb")
-	download_to <- paste( download_to, "/admb", sep="" )
-	print( download_to )
-	#create dir
-	if( file.exists( download_to ) == FALSE )
-		dir.create( download_to )
-	setwd( download_to )
-	#save as admb.zip in the dir
-	download.file( url, "admb.zip" )
-	unzip( "admb.zip" )
-	setwd( oldwd )
-	cat( "Please re-run admb() for changes to take effect\n" )
-	return( paste( download_to, "/admb-win32-mingw", sep="" ) )
+	download_to <- paste( download_to, "/software", sep="" )
+
+	#default directory names to install to
+	admbdir <- c( "32" = paste( download_to, "/admb", sep="" ), "64" = paste( download_to, "/admb64", sep="" ) )
+	gccdir <- c( "32" = paste( download_to, "/mingw", sep="" ), "64" = paste( download_to, "/mingw64", sep="" ) )
+
+
+	#given: arch: "32" or "64"
+	#       val: string of path in GUI, e.g. "c:/foo/bar"
+	#       defaults: vector of default path locations, with names matching arch
+	#                 e.g. c( "32" = "c:/foo/bar", "64" = "c:/foo/bar64" )
+	# returns: corrected value for GUI (e.g. updates the path from c:/otherfoo/bar to c:/otherfoo/bar64 when moving to arch=64)
+	.fixLastDirName <- function( arch, val, defaults )
+	{
+		#get last dir name of all paths
+		default.d <- .getDirName( defaults )
+		d <- .getDirName( val )
+
+		if( any( d == default.d ) ) {
+			val <- gsub("\\\\", "/", val )
+			val <- unlist( strsplit( val, "/" ) )
+			val[ length( val ) ] <- default.d[ arch ]
+			val <- paste( val, collapse = "/" )
+		}
+		return( val )
+	}
+
+	#called when software to install is toggled
+	checkSoft <- function()
+	{
+		getWinVal(scope="L")
+		
+		state <- ifelse( c(admb=chkadmb, gcc=chkgcc), "normal", "disabled" )
+		setWidgetState( "admbdir", state["admb"] )
+		setWidgetState( "admbdirbutton", state["admb"] )
+		setWidgetState( "gccdir", state["gcc"] )
+		setWidgetState( "gccdirbutton", state["gcc"] )
+
+		#disable install button if nothing is selected
+		setWidgetState( "installbutton", ifelse( all( state == "disabled" ), "disabled", "normal" ) )
+	}
+
+	#called when arch is changed
+	changeArch <- function()
+	{
+		vals <- getWinVal()
+		arch <- vals[["arch"]]
+
+		setWinVal( list( 
+			admbdir = .fixLastDirName( arch, vals[["admbdir"]], admbdir ),
+			gccdir = .fixLastDirName( arch, vals[["gccdir"]], gccdir )
+		) )
+		
+	}
+	changeDir <- function()
+	{
+		vals <- getWinVal()
+		arch <- vals[["arch"]]
+		act <- getWinAct()[1]
+		old <- vals[[ act ]]
+
+		d <- choose.dir( old )
+		
+		if( !is.na( d ) ) {
+			tmp <- list()
+			tmp[[ act ]] <- d
+			setWinVal( tmp )
+		}
+	}
+	install <- function()
+	{
+		.get.url <- function( fname )
+		{
+			#ensure the url ends with /
+			base.url <- "http://pbs-admb.googlecode.com/files/"
+			#base.url <- "C:\\Users\\alex\\Documents\\stuff\\projects\\dfo\\pbsadmb\\admb_binary\\"
+			return( paste( base.url, fname, sep="" ) )
+		}
+	
+		#load list of software from google code
+		software <- read.table( .get.url( "versions.txt" ), header=T, stringsAsFactors=F )
+		software$url <- .get.url( software$filename )
+
+		#software should be a data.frame with columns: software, filename, hash, and url (added after reading)
+		#example:
+		#   software                           filename                                     hash  |  url (added after reading)
+		#1 ADMBgcc32 admb-10.0-mingw-gcc4.5.0-32bit.zip bb4b13634aba91625e627e5950870d482568110f  |  http://.../admb-10.0-mingw-gcc4.5.0-32bit.zip
+		#2 ADMBgcc64 admb-10.0-mingw-gcc4.5.2-64bit.zip db334b21f393fb397f81a17eecba02c5345fe223  |  http://.../admb-10.0-mingw-gcc4.5.2-64bit.zip
+		#3     gcc32                         gcc450.zip 8a210c2136a5075389a368b558ada0eebe164642  |  http://.../gcc450.zip
+		#4     gcc64                   gcc452-64bit.zip 231e56d8f82ef54bfd5b2d7257e42fd429977d5b  |  http://.../gcc452-64bit.zip
+
+		#When a new version of ADMB is to be added:
+		#1) make sure there is a version.txt file included in the installation zip which indicates the version of ADMB (or gcc) on a single line
+		#2) upload it to google
+		#3) modify the versions.txt file on google, updating the filename and hash field of the updated software (note: the sha1 hash can be obtained on google's download info page)
+		#4) test that it works
+
+		#give: software: table defined above
+		#	name: software name: "gcc", or "ADMBgcc"
+		#	arch: "32" or "64"
+		#returns: a row of the software table, or NULL if not found
+		.getSoftwareRow <- function( software, name, arch )
+		{
+			name <- paste( name, arch, sep="" )
+			x <- software[ software$software == name, ]
+			if( nrow( x ) == 0 )
+				return( NULL )
+			return( x )
+		}
+
+		getWinVal( scope="L" )
+
+		#keep track of installation files in this file
+		fname = paste( system.file(package="PBSadmb"), "/ADopts.txt", sep="" )
+		pkgOptions <- new( "PBSoptions", filename = fname, initial.options = list(admbpath="", gccpath=""), gui.prefix="" )
+
+		previous.settings.ok <- checkADopts(check=c("admbpath","gccpath"), warn=FALSE)
+
+		#each row is a software component the user can install, with GUI options
+		eval(parse(text= "software.to.install <<- data.frame(
+			selected = c( chkadmb, chkgcc ),
+			dir = c( admbdir, gccdir ),
+			name = c( \"ADMBgcc\", \"gcc\" ),
+			option.name = c( \"admbpath\", \"gccpath\" ),
+			ok = c( FALSE, FALSE ),
+			stringsAsFactors=FALSE
+			)"))
+		
+		#only select the selected software components
+		software.to.install <- software.to.install[ software.to.install$selected, ]
+		
+		install.ok <- TRUE
+
+		#iterate each row of software.to.install data.frame
+		if( nrow( software.to.install ) ) {
+			for( i in 1:nrow( software.to.install ) ) {
+				to.install <- software.to.install[ i, ]
+
+				#install ok flag
+				ok <- FALSE
+
+				version.fname = paste( to.install$dir, "/version.txt", sep="" )
+				if( file.exists( version.fname ) ) {
+					#should be two lines: line 1) version number, 2) name of zip file used to install this
+					version.info <- readLines( version.fname, warn=F )[1]
+					if( getYes( paste( "You already have version", version.info, "installed in", to.install$dir, "\nDo you want to overwrite?" ) ) ) {
+						#remove installed files
+						zip.fname <- paste( to.install$dir, "/", .getDirName( to.install$dir ), ".zip", sep="" )
+						cat( paste( "Deleting old ", to.install$name, " files in ", to.install$dir, ".\n", sep="" ) )
+						ok <- .deleteExtractedZipFiles( zip.fname )
+						cat( paste( "cleanup done.\n", sep="" ) )
+						if( ok == FALSE )
+							showAlert( paste( "Unable to uninstall previous version of ", to.install$name, ".\n\nThe zip file \"", zip.fname, "\" is missing and is required for building the list of previously installed files to delete.\n\nTry manually deleting the contents of the directory: \"", to.install$dir, "\"", sep="" ) )
+					}
+				}
+				if( !file.exists( version.fname ) ) {
+					x <- .getSoftwareRow( software, to.install$name, arch )
+					if( !is.null( x ) ) {
+						#install gcc to gccdir
+						ok <- .installADMB.windows( x$url, to.install$dir, x$hash )
+						software.to.install[i,"ok"] <- ok
+					}
+					if( ok == TRUE ) {
+						#save the option: key: option.name, val: dir. e.g. gccpath = gccdir, or admbpath = admbdir
+						tmp <- list( .PBSadmb )
+						tmp[[ to.install$option.name ]] <- to.install$dir
+						do.call( setOptions, tmp )
+					} else {
+						showAlert( paste( "Failed to install", to.install$name, "- see R console for details" ) )
+					}
+					install.ok <- install.ok && ok
+				} else {
+					#user hit no
+					chkgcc <- FALSE
+				}
+			}
+		}
+
+		if( install.ok == FALSE ) {
+			cat( "\n\n-------------------------------------------\n" )
+			cat( "Installation Failed" )
+			cat( "\n-------------------------------------------\n\n" )
+			return( FALSE )
+		}
+
+		
+		#save locations where files were installed (and previous settings were incorrect)
+		new.settings.ok <- checkADopts(check=c("admbpath","gccpath"), warn=FALSE)
+		if( previous.settings.ok == FALSE && new.settings.ok == TRUE ) {
+			writeADopts()
+		}
+		cat( "\n\n-------------------------------------------\n" )
+		cat( "Installation complete" )
+		cat( "\n-------------------------------------------\n\n" )
+
+		closeWin("PBSadmbInst")
+
+		#update GUI with new values
+		if( chkadmb ) setWinVal(list(admbpath=admbdir),winName="PBSadmb")
+		if(  chkgcc ) setWinVal(list(gccpath=gccdir), winName="PBSadmb")
+		.win.makeADopts()
+	}
+	create <- function()
+	{
+		win <- system.file("win/installWin.txt", package="PBSadmb")
+		createWin( win, env = parent.env( environment() ) )
+	}
+	
+	#create the window
+	create()
+
+	#set default values
+	arch <- ifelse( .Platform$r_arch == "x64", "64", "32" ) 
+	setWinVal( list( 
+		arch = arch,
+		admbdir = admbdir[ arch ],
+		gccdir = gccdir[ arch ] ) )
 }
 
 
-makeADopts <- function( admpath, gccpath, editor )
+#usage: .installADMB.windows( gcc = "http://some.url/to.download.zip" )
+# will be downloaded to gcc.zip, and extract to a directory under PBSadmb\gcc\...
+# any number of programs can be downloaded and unzipped this way
+#hash: sha1 hash of file to download (can be viewed on google-code), if missing, no checks are performed
+.installADMB.windows <- function( url, install.path, hash = NULL )
 {
-	setOptions( .PBSadmb, admpath = admpath, gccpath = gccpath, editor = editor )
+	#use.digest <- require( digest, quietly = TRUE )
+	use.digest = FALSE
+	if( use.digest == FALSE ) hash <- NULL
+	
+	cat( "\n\n-------------------------------------------\n" )
+	oldwd <- getwd()
+	if( file.exists( install.path ) == FALSE ) {
+		dir.create( install.path, recursive=TRUE )
+		cat( paste( "creating directory:", install.path, "\n" ) )
+	}
+	setwd( install.path )
+
+	name <- .getDirName( install.path )
+	save_to <- paste( name, ".zip", sep="" )
+	cat( paste( "preparing to download:\n" ) )
+	cat( paste( "  URL:", url, "\n" ) )
+	cat( paste( "  Saving to:", install.path, "/", save_to, "\n", sep="" ) )
+	if( file.exists( url ) )
+		file.copy( url, save_to, overwrite=TRUE )
+	else
+		download.file( url, save_to )
+
+	#check hash
+	if( !is.null( hash ) ) {
+		file.hash <- digest( save_to, "sha1", file=TRUE )
+		if( file.hash != hash ) {
+			cat( "!!!!!!!!!!!! File hashes do not match !!!!!!!!!!!!!!\n" )
+			cat( paste( "expected:  ", hash, "\n" ) )
+			cat( paste( "calculated:", file.hash, "\n" ) )
+			return( FALSE )
+		}	
+		cat( paste( "calculated file hash matches:", file.hash, "\n" ) )
+	}
+
+	cat( "Download complete.\nAttempting to unzip files\n" )
+	unzip( save_to, exdir="." )
+	cat( "Unzip complete.\n\n" )
+	cat( paste( name, " has been installed to: ", install.path, "\n", sep="" ) )
+	cat( "-------------------------------------------\n\n" )
+
+	setwd( oldwd )
+	return( TRUE )
+}
+
+.deleteExtractedZipFiles <- function( zip.fname )
+{
+	if( !file.exists( zip.fname ) ) {
+		return( FALSE )
+	}
+	eval(parse(text="files <<- as.character( unzip( zip.fname, list=TRUE )$Name )"))
+	#directories have a trailing /, which causes file.info to report NA for isdir
+	eval(parse(text="files <<- gsub( \"/$\", \"\", files )"))
+	eval(parse(text="files <<- paste( dirname( zip.fname ), files, sep=\"/\" )"))
+	eval(parse(text="isdir <<- file.info( files )[,\"isdir\"]"))
+
+	#delete all files
+	lapply( files[ !isdir ], unlink )
+
+	#delete all directories, sorted from most nested dir, to least nested dir (to delete a child before the parent)
+	#To be safe, don't delete a dir unless it is empty (unlink fails to delete a dir with recursive=FALSE)
+	lapply( rev( sort( files[ isdir ] ) ), 
+		function(f) {
+			if( length( dir(f) ) == 0 ) { unlink(f,recursive=TRUE) }
+		}
+	)
+	return( TRUE )
+}
+
+
+makeADopts <- function( admbpath, gccpath, editor )
+{
+	cat( "THIS FUNCTION IS DEPRECATED - use setADMBPath\n" )
+	setADMBPath( admbpath = admbpath, gccpath = gccpath, editor = editor )
+}
+
+setADMBPath <- function( admbpath, gccpath, editor )
+{
+	.initOptions()
+	if( missing( admbpath ) == FALSE )
+		setOptions( .PBSadmb, admbpath = admbpath )
+	if( missing( gccpath ) == FALSE )
+		setOptions( .PBSadmb, gccpath = gccpath )
+	if( missing( editor ) == FALSE )
+		setOptions( .PBSadmb, editor = editor )
 }
 	
-.win.makeADopts=function(winName="PBSadmb"){
+.win.makeADopts=function(winName="PBSadmb")
+{
 	getWinVal(scope="L",winName=winName)
-	makeADopts(admpath,gccpath,editor) 
-	invisible() }
-
-writeADopts <- function(optfile="ADopts.txt") {
-	saveOptions( .PBSadmb, optfile )
+	setADMBPath(admbpath,gccpath,editor) 
+	.win.checkADopts()
+	invisible()
 }
 
-.win.writeADopts=function(winName="PBSadmb") {
+writeADopts <- function(optfile="ADopts.txt")
+{
+	#save to current dir
+	saveOptions( .PBSadmb, optfile )
+
+	#save to pkg dir (don't change fname)
+	#TODO: hack until http://code.google.com/p/pbs-modelling/issues/detail?id=81 is solved
+	opts <- getOptions( .PBSadmb )
+	tmp <- list( .PBSadmb.pkgOptions )
+	tmp[ names( opts ) ] <- opts
+	do.call( setOptions, tmp )
+	saveOptions( .PBSadmb.pkgOptions )
+	return(invisible(NULL))
+}
+
+.win.writeADopts=function(winName="PBSadmb")
+{
+	isOK=.win.checkADopts()
+	if (!isOK) return()
 	getWinVal(scope="L",winName=winName)
 	writeADopts(optfile=optfile) 
-	invisible() }
-
-readADopts <- function(optfile="ADopts.txt") {
-	loadOptions( .PBSadmb, optfile )
+	invisible()
 }
 
-.win.readADopts=function(winName="PBSadmb") {
+readADopts <- function(optfile="ADopts.txt")
+{
+	# Create instance of option manager - use this to get/set/save/load options
+	# First attempt to load options from the package, then attempt to load options from the current dir (which will override pkg options)
+	pkg_fname = paste( system.file(package="PBSadmb"), "/ADopts.txt", sep="" )
+	eval(parse(text=".PBSadmb.pkgOptions <<- new( \"PBSoptions\", filename = pkg_fname, initial.options = list(admbpath=\"\", gccpath=\"\",editor=\"\"), gui.prefix=\"\" )"))
+
+	# Load from current dir, using pkgOptions as default values
+	eval(parse(text=".PBSadmb <<- new( \"PBSoptions\", filename = optfile, initial.options = getOptions( .PBSadmb.pkgOptions ), gui.prefix=\"\" )"))
+
+	.guessPath <- function( programs, includefilename = FALSE, failed = NULL )
+	{
+		for( p in programs ) {
+			found <- Sys.which( p )[ 1 ]
+			if( found != "" ) {
+				if( includefilename )
+					return( found )
+				return( dirname( found ) )
+			}
+		}
+		return( failed )
+	}
+
+	if( getOptions( .PBSadmb, "editor" ) == "" )
+		setOptions( .PBSadmb, editor = .guessPath( c( "kate", "notepad" ), TRUE ) )
+}
+
+.win.readADopts=function(winName="PBSadmb")
+{
 	getWinVal(scope="L",winName=winName)
 	if (file.exists(optfile)) {
 		readADopts(optfile=optfile)
 		loadOptionsGUI( .PBSadmb )
 	} else {
 		mess=paste("Options file '",optfile,"' does not exist",sep="")
-		showAlert(mess); stop(mess) }
-	invisible() }
+		showAlert(mess)
+ stop(mess) }
+	invisible()
+}
 
-checkADopts=function(opts=getOptions( .PBSadmb ), check=c("admpath","gccpath","editor"),
-     warn=TRUE, popup=FALSE) {
+checkADopts=function(opts=getOptions( .PBSadmb ), check=c("admbpath","gccpath","editor"),
+     warn=TRUE, popup=FALSE)
+{
 	# Check that .ADopts has all required components and that links point to actual files on the hard drive.
 	#if (!exists(".ADopts",envir=.GlobalEnv)) initAD()
 	sAF=options()$stringsAsFactors; options(stringsAsFactors=FALSE)
@@ -166,7 +525,7 @@ checkADopts=function(opts=getOptions( .PBSadmb ), check=c("admpath","gccpath","e
 		if (!any(i==check))
 			next
 		ii=ipath=opts[[i]]
-		if (i=="admpath") {
+		if (i=="admbpath") {
 			ipath=paste(ii,"/bin",sep="")
 			if( .Platform$OS.type == "windows" )
 				progs=c("tpl2cpp.exe","tpl2rem.exe")
@@ -175,18 +534,20 @@ checkADopts=function(opts=getOptions( .PBSadmb ), check=c("admpath","gccpath","e
 		}
 		else if (i=="gccpath")
 			if( .Platform$OS.type == "windows" )
-				progs="g++.exe" 
+				progs="bin\\g++.exe" 
 			else
-				progs="g++" 
+				progs="bin/g++" 
 		else if (i=="editor") {
 			ipath=dirname(ii)
 			progs=basename(ii)
 		}
 		target=paste(ipath,progs,sep="/")
-		istatus=file.exists(target); names(istatus)=progs
+		istatus=file.exists(target)
+		names(istatus)=progs
 		mess[[ipath]]=istatus
 	}
-	ADstatus=all(unlist(mess)==TRUE); attr(ADstatus,"status")=mess
+	ADstatus=all(unlist(mess)==TRUE)
+	attr(ADstatus,"status")=mess
 	vmess=unlist(mess)
 	names(vmess)=paste(rep(names(mess),sapply(mess,length,simplify=FALSE)),
 		unlist(sapply(mess,names,simplify=FALSE)),sep="/")
@@ -199,42 +560,60 @@ checkADopts=function(opts=getOptions( .PBSadmb ), check=c("admpath","gccpath","e
 			badmess=paste("Programs not found:\n",paste(names(vmess)[!vmess],collapse="\n"),
 				"\n\nEither alter '.ADopts' or remove it and alter 'ADopts.txt'.\n\n",
 				"If using the ADMB GUI, alter the appropriate entry.\n\n",sep="")
+			if (.Platform$OS.type=="windows" && popup) {
+				badmess <- paste( badmess, "You may also install ADMB directly by using the install dropdown menu.", sep="" )
+			}
 			if (warn) cat(badmess)
 			if (popup) showAlert(badmess,"User action required","warning") } }
 	options(stringsAsFactors=sAF)
-	invisible(ADstatus) }
+	invisible(ADstatus)
+}
 
-.win.checkADopts=function(winName="PBSadmb") {
+.win.checkADopts=function(winName="PBSadmb")
+{
 	getWinVal(scope="L",winName=winName)
-	chkstat=checkADopts(opts=list(admpath=admpath,gccpath=gccpath,editor=editor),popup=TRUE)
+	chkstat=checkADopts(opts=list(admbpath=admbpath,gccpath=gccpath,editor=editor),popup=TRUE)
 	#set label to OK/FIX with coloured background
 	setWinVal(list(chkstat=ifelse(chkstat," OK"," Fix")),winName=winName)
 	setWidgetColor( "chkstat", winName=winName, bg=ifelse(chkstat,"lightgreen","red") )
 	setWidgetColor( "checkbutton", winName=winName, bg=ifelse(chkstat,"moccasin","red") )
 
-	invisible(chkstat) }
+	invisible(chkstat)
+}
 
-startLog <- function(prefix) {
-  p.log <- paste(prefix, ".log", sep="");
-  if (file.exists(p.log)) file.remove(p.log);
-  dstamp <- date();
-  line1 <- paste("Log file for ", prefix, " (", dstamp, ")\n", sep="")
-  writeLines(line1, con=p.log) }
+startLog <- function(prefix)
+{
+	p.log <- paste(prefix, ".log", sep="");
+	if (file.exists(p.log)) file.remove(p.log)
 
-.win.startLog=function(winName="PBSadmb") {
+	dstamp <- date()
+
+	line1 <- paste("Log file for ", prefix, " (", dstamp, ")\n", sep="")
+	writeLines(line1, con=p.log)
+}
+
+.win.startLog=function(winName="PBSadmb")
+{
 	getWinVal(scope="L",winName=winName)
 	startLog(prefix=prefix) 
-	invisible() }
+	invisible()
+}
 
-appendLog <- function(prefix, lines) {
-  p.log <- paste(prefix, ".log", sep="");
-  if (!file.exists(p.log)) startLog(prefix);
-  cat(lines, file=p.log, sep="\n", append=TRUE) }
+appendLog <- function(prefix, lines)
+{
+	p.log <- paste(prefix, ".log", sep="")
 
-.win.appendLog=function(winName="PBSadmb") {
+	if (!file.exists(p.log)) startLog(prefix)
+
+	cat(lines, file=p.log, sep="\n", append=TRUE)
+}
+
+.win.appendLog=function(winName="PBSadmb")
+{
 	getWinVal(scope="L",winName=winName)
 	appendLog(prefix=prefix,lines=lines) 
-	invisible() }
+	invisible()
+}
 
 .callSys <- function(..., wait=TRUE) { # note dots is not interpreted as expected, uses only first in list
 	dots=list(...)
@@ -244,152 +623,259 @@ appendLog <- function(prefix, lines) {
 		out=shell(dots,intern=TRUE) }
 	else {
 		cmd <- unlist(list(...))
+		#print( cmd )
 		if( wait == FALSE )
-	   		out=system(cmd,wait=FALSE)
+			out=system(cmd,wait=FALSE)
 		else
-	   		out=system(cmd,intern=TRUE)
+			out=system(cmd,intern=TRUE)
 	}
 	invisible(out) }
+
+#add a dir to path variable (only if it hasn't already been set)
+.appendToPath <- function( path_to_add )
+{
+	path <- Sys.getenv( "PATH" )
+	path_sep <- .Platform$path.sep
+	if( any( unlist( strsplit( path, path_sep ) ) == path_to_add ) == FALSE ) {
+		#path_to_add doesn't exist in path - append it, and reset env variable
+		path <- paste( path, path_to_add, sep = path_sep )
+		Sys.setenv( PATH = path )
+	}
+}
+
+.setPath <- function()
+{
+	path_sep <- .Platform$path.sep
+	dir_sep <- ifelse( .Platform$OS.type == "windows", "\\", "/" )
+
+	admb_home <- getOptions( .PBSadmb, "admbpath" )
+	admb_path <- paste( getOptions( .PBSadmb, "admbpath" ), "bin", sep = dir_sep )
+	gcc_path <- paste( getOptions( .PBSadmb, "gccpath"), "bin", sep = dir_sep )
+
+	if( .Platform$OS.type == "windows" ) {
+		msys_path <- paste( getOptions( .PBSadmb, "gccpath"), "msys", "1.0", "bin", sep = dir_sep )
+	} else {
+		#linux must include original path so programs like cat, sed are found
+		msys_path <- Sys.getenv( "PATH" )
+	}
+
+	path <- paste( admb_path, gcc_path, msys_path, sep = path_sep )
+	Sys.setenv( PATH = path )
+
+	Sys.setenv( ADMB_HOME = gsub("/*$", "", admb_home ) ) #ensure no trailing slash (`/') exists
+}
 
 #convAD---------------------------------2009-08-12
 # Conver TPL file to CPP code.
 #-------------------------------------------JTS/RH
-convAD <- function(prefix, raneff=FALSE, logfile=TRUE, add=FALSE, verbose=TRUE, comp="GCC") {
-	adp <- getOptions( .PBSadmb, "admpath" )
-	index=ifelse(raneff,2,1)
-	cmd=parseCmd(prefix,index=index,admpath=adp,comp=comp )
-	if (raneff) {
-		#set path to include admb's bin dir (for sed.exe, etc...)
-		path_sep <- ifelse( .Platform$OS.type == "windows", ";", ":" )
-		admb_bin_path <- paste( adp, "/bin/", sep="" )
-		if( .Platform$OS.type == "windows" ) 
-			admb_bin_path <- gsub( "/", "\\\\", admb_bin_path )
-		path <- Sys.getenv( "PATH" )
-		#only change PATH if required
-		if( any( unlist( strsplit( path, path_sep ) ) == admb_bin_path ) == FALSE ) {
-			#admb_bin doesn't exist in path - append it, and reset env variable
-			path <- paste( path, admb_bin_path, sep = path_sep )
-			Sys.setenv( PATH = path )
-		}
+convAD <- function(prefix, raneff=FALSE, safe=TRUE, dll=FALSE, debug=FALSE, logfile=TRUE, add=TRUE, verbose=TRUE)
+{
+	#get path and name of program
+	ext <- ifelse( .Platform$OS.type == "windows", ".exe", "" )
+	prog <- ifelse( raneff == TRUE, "tpl2rem", "tpl2cpp" )
 
-		#set env var for random effects
-		Sys.setenv( ADMB_HOME = adp )
-	
-		if( .Platform$OS.type == "windows" ) 
-			cmd <- paste( adp, "/bin/tpl2rem.exe ", prefix, sep="" )
-		else
-			cmd <- paste( adp, "/bin/tpl2rem ", prefix, sep="" )
-	}
-	if (logfile & !add) startLog(prefix);
-	if (verbose) cat(cmd,"\n");
-	if (.Platform$OS.type=="windows") {
-	  cmd=.addQuotes(convSlashes(cmd))
-	}
+ 	#add cmd flags
+ 	flags <- c()
+ 	if( dll )
+ 		flags[ length( flags ) + 1 ] <- "-dll"
+ 	if( safe )
+ 		flags[ length( flags ) + 1 ] <- "-bounds"
+
+ 	#build command string
+ 	flags <- paste( flags, collapse=" " )
+
+	cmd <- paste( prog, flags, prefix, sep=" " )
+	if (.Platform$OS.type=="windows")
+		cmd=shQuote(cmd)
+		#cmd=.addQuotes(convSlashes(cmd))
+
+	#add ADMB path to path env variable
+	old_path <- Sys.getenv( "PATH" )
+	.setPath()
+
+	#pre cmd run
+	if (logfile & !add)
+		startLog(prefix)
+	if (verbose)
+		cat(cmd,"\n")
+
+	#run cmd
 	tplout <- .callSys(cmd)
-	tplout2 <- c(cmd,tplout)
-	if (logfile) appendLog(prefix, tplout2)
-	if (verbose) cat(tplout, sep="\n")
+
+	#post cmd run
+	if (logfile) {
+		tplout2 <- c(cmd,tplout)
+		appendLog(prefix, tplout2)
+	}
+	if (verbose)
+		cat(tplout, sep="\n")
+
+	#restore path
+	Sys.setenv( PATH = old_path )
 	invisible(tplout2)
 }
 
-.win.convAD=function(winName="PBSadmb") {
-	isOK=.win.checkADopts(); if (!isOK) return()
+.win.convAD=function(winName="PBSadmb")
+{
+	isOK=.win.checkADopts()
+	if (!isOK)
+		return()
 	setWinVal(list(Mtime=matrix(NA,nrow=3,ncol=3)),winName=winName)
 	time0=proc.time()[1:3]
 	getWinVal(scope="L",winName=winName)
-	convAD(prefix=prefix,raneff=raneff) #,logfile=logfile,add=add,verbose=verbose)
+	convAD(prefix, raneff, safe, dll, debugsymbols, logfile, add, verbose)
 	Ttime=round(proc.time()[1:3]-time0,2)
 	setWinVal(list("Mtime[1,1]"=Ttime[1],"Mtime[1,2]"=Ttime[2],"Mtime[1,3]"=Ttime[3]),winName=winName) 
-	if( .Platform$OS.type == "unix" ) cat("\n> ")
+	if( .Platform$OS.type == "unix" )
+		cat("\n> ")
 	invisible(Ttime) }
 
 #compAD---------------------------------2009-08-12
 # Apparently "raneff" doesn't influence the compile stage,
 # but the argument is preserved here for future development.
 #-------------------------------------------JTS/RH
-compAD <- function(prefix, raneff=FALSE, safe=TRUE, logfile=TRUE, add=TRUE, verbose=TRUE, comp="GCC") {
-	adp <- getOptions( .PBSadmb, "admpath")
-	gcp <- getOptions( .PBSadmb, "gccpath")
-	index=ifelse(safe,4,3)
-	print( gcp )
-	cmd=parseCmd(prefix,index=index,admpath=adp,gccpath=gcp,comp=comp)
-	print( cmd )
-	if (logfile & !add) startLog(prefix)
-	if (verbose) cat(cmd,"\n")
-	if (.Platform$OS.type=="windows") {
-	  cmd=.addQuotes(convSlashes(cmd))
+compAD <- function(prefix, raneff=FALSE, safe=TRUE, dll=FALSE, debug=FALSE, logfile=TRUE, add=TRUE, verbose=TRUE)
+{
+	#get path and name of program
+	ext <- ifelse( .Platform$OS.type == "windows", ".bat", "" )
+	prog <- paste( "adcomp", ext, sep="" )
+
+ 	#add cmd flags
+ 	flags <- c()
+ 	if( dll )
+ 		flags[ length( flags ) + 1 ] <- "-d"
+ 	if( debug )
+ 		flags[ length( flags ) + 1 ] <- "-g"
+ 	if( safe )
+ 		flags[ length( flags ) + 1 ] <- "-s"
+ 	if( raneff )
+ 		flags[ length( flags ) + 1 ] <- "-r"
+
+	#build command string
+	flags <- paste( flags, collapse=" " )
+	cmd <- paste( prog, flags, prefix, sep=" " )
+	if (.Platform$OS.type=="windows")
+		cmd=shQuote(cmd)
+		#cmd=.addQuotes(convSlashes(cmd))
+
+	#add ADMB path to path env variable
+	old_path <- Sys.getenv( "PATH" )
+	.setPath()
+
+	#pre cmd run
+	if (logfile & !add)
+		startLog(prefix)
+	if (verbose)
+		cat(cmd,"\n")
+
+	#run cmd
+	out <- .callSys(cmd)
+
+	#post cmd run
+	if (logfile) {
+		out2 <- c(cmd,out)
+		appendLog(prefix, out2)
 	}
-	out1 <- .callSys(cmd)
-	out2 <- c(cmd,out1)
-	if (logfile) appendLog(prefix, out2)
-	if (verbose) cat(out1, sep="\n")
+	if (verbose)
+		cat(out, sep="\n")
+
+	Sys.setenv( PATH = old_path )
 	invisible(out2)
 }
 
-.win.compAD=function(winName="PBSadmb") {
-	isOK=.win.checkADopts(); if (!isOK) return()
+.win.compAD=function(winName="PBSadmb")
+{
+	isOK=.win.checkADopts()
+ if (!isOK) return()
 	time0=proc.time()[1:3]
 	getWinVal(scope="L",winName=winName)
-	compAD(prefix=prefix,raneff=raneff,safe=safe) #,logfile=logfile,add=add,verbose=verbose)
+	compAD(prefix, raneff, safe, dll, debugsymbols, logfile, add, verbose)
 	Ttime=round(proc.time()[1:3]-time0,2)
 	setWinVal(list("Mtime[2,1]"=Ttime[1],"Mtime[2,2]"=Ttime[2],"Mtime[2,3]"=Ttime[3]),winName=winName) 
 	if( .Platform$OS.type == "unix" ) cat("\n> ")
-	invisible(Ttime) }
+	invisible(Ttime)
+}
 
 #linkAD---------------------------------2009-08-12
 # Links binaries into executable
 #-------------------------------------------JTS/RH
-linkAD <- function(prefix, raneff=FALSE, safe=TRUE, logfile=TRUE, add=TRUE, verbose=TRUE, comp="GCC") {
-  adp <- getOptions( .PBSadmb, "admpath")
-  gcp <- getOptions( .PBSadmb, "gccpath")
-  index=ifelse(safe&raneff,8,ifelse(!safe&raneff,7,ifelse(safe&!raneff,6,5)))
-  cmd=parseCmd(prefix,index=index,admpath=adp,gccpath=gcp,comp=comp)
-  if (logfile & !add) startLog(prefix);
-  if (verbose) cat(cmd,"\n");
-if (.Platform$OS.type=="windows") {
-  cmd=.addQuotes(convSlashes(cmd))
-}
-  out1 <- .callSys(cmd)
-  out2 <- c(cmd,out1)
-  if (logfile) appendLog(prefix, out2);
-  if (verbose) cat(out1, sep="\n");
-  invisible(out2); };
+linkAD <- function(prefix, raneff=FALSE, safe=TRUE, dll=FALSE, debug=FALSE, logfile=TRUE, add=TRUE, verbose=TRUE)
+{
+	#get path and name of program
+	ext <- ifelse( .Platform$OS.type == "windows", ".bat", "" )
+	prog <- paste( "adlink", ext, sep="" )
 
-.win.linkAD=function(winName="PBSadmb") {
-	isOK=.win.checkADopts(); if (!isOK) return()
+	#add cmd flags
+	flags <- c()
+	if( dll )
+		flags[ length( flags ) + 1 ] <- "-d"
+	if( debug )
+		flags[ length( flags ) + 1 ] <- "-g"
+	if( safe )
+		flags[ length( flags ) + 1 ] <- "-s"
+	if( raneff )
+		flags[ length( flags ) + 1 ] <- "-r"
+
+	#build command string
+	flags <- paste( flags, collapse=" " )
+	cmd <- paste( prog, flags, prefix, sep=" " )
+	if (.Platform$OS.type=="windows")
+		cmd=shQuote(cmd)
+		#cmd=.addQuotes(convSlashes(cmd))
+
+	#add ADMB path to path env variable
+	old_path <- Sys.getenv( "PATH" )
+	.setPath()
+
+	#pre cmd run
+	if (logfile & !add)
+		startLog(prefix)
+	if (verbose)
+		cat(cmd,"\n")
+
+	#run cmd
+	out <- .callSys(cmd)
+
+	#post cmd run
+	if (logfile) {
+		out2 <- c(cmd,out)
+		appendLog(prefix, out2)
+	}
+	if (verbose)
+		cat(out, sep="\n")
+
+	Sys.setenv( PATH = old_path )
+	invisible(out2)
+}
+
+.win.linkAD=function(winName="PBSadmb")
+{
+	isOK=.win.checkADopts()
+ if (!isOK) return()
 	time0=proc.time()[1:3]
 	getWinVal(scope="L",winName=winName)
-	linkAD(prefix=prefix,raneff=raneff,safe=safe) #,logfile=logfile,add=add,verbose=verbose) 
+	linkAD(prefix, raneff, safe, dll, debugsymbols, logfile, add, verbose)
 	Ttime=round(proc.time()[1:3]-time0,2)
 	setWinVal(list("Mtime[3,1]"=Ttime[1],"Mtime[3,2]"=Ttime[2],"Mtime[3,3]"=Ttime[3]),winName=winName) 
 	if( .Platform$OS.type == "unix" ) cat("\n> ")
-	invisible(Ttime) }
+	invisible(Ttime)
+}
 
-makeAD <- function(prefix, raneff=FALSE, safe=TRUE, logfile=TRUE, verbose=TRUE) {
-  convAD(prefix, raneff, logfile, add=FALSE, verbose);
-  compAD(prefix, raneff, safe, logfile, add=TRUE, verbose);
-  linkAD(prefix, raneff, safe, logfile, add=TRUE, verbose); };
+makeAD <- function(prefix, raneff=FALSE, safe=TRUE, dll=FALSE, debug=FALSE, logfile=TRUE, add=TRUE, verbose=TRUE)
+{
+	convAD(prefix, raneff, safe, dll, debug, logfile, add, verbose)
+	compAD(prefix, raneff, safe, dll, debug, logfile, add, verbose)
+	linkAD(prefix, raneff, safe, dll, debug, logfile, add, verbose)
+}
+
 
 .win.makeAD=function(winName="PBSadmb") {
-	isOK=.win.checkADopts(); if (!isOK) return()
-	setWinVal(list(Mtime=matrix(NA,nrow=3,ncol=3)),winName=winName)
-	time0=proc.time()[1:3]
-	getWinVal(scope="L",winName=winName)
-
-	convAD(prefix=prefix,raneff=raneff) #,logfile=logfile,add=add,verbose=verbose)
-	Ttime=round(proc.time()[1:3]-time0,2); time0=proc.time()[1:3]
-	setWinVal(list("Mtime[1,1]"=Ttime[1],"Mtime[1,2]"=Ttime[2],"Mtime[1,3]"=Ttime[3]),winName=winName)
-
-	compAD(prefix=prefix,raneff=raneff,safe=safe) #,logfile=logfile,add=add,verbose=verbose)
-	Ttime=round(proc.time()[1:3]-time0,2); time0=proc.time()[1:3]
-	setWinVal(list("Mtime[2,1]"=Ttime[1],"Mtime[2,2]"=Ttime[2],"Mtime[2,3]"=Ttime[3]),winName=winName)
-
-	linkAD(prefix=prefix,raneff=raneff,safe=safe) #,logfile=logfile,add=add,verbose=verbose) 
-	Ttime=round(proc.time()[1:3]-time0,2)
-	setWinVal(list("Mtime[3,1]"=Ttime[1],"Mtime[3,2]"=Ttime[2],"Mtime[3,3]"=Ttime[3]),winName=winName) 
-
-	if( .Platform$OS.type == "unix" ) cat("\n> ")
-	invisible() }
+	isOK=.win.checkADopts()
+	if (!isOK) return()
+	.win.convAD( winName )
+	.win.compAD( winName )
+	.win.linkAD( winName )
+}
 
 runAD <- function(prefix, argvec="", logfile=TRUE, add=TRUE, verbose=TRUE)
 {
@@ -398,102 +884,155 @@ runAD <- function(prefix, argvec="", logfile=TRUE, add=TRUE, verbose=TRUE)
 	else
 		p.exe <- paste("./", prefix, sep="" )
 	if (logfile) {
-		p.log=paste(prefix,".log",sep=""); p.log.log=paste(p.log,".log",sep="")
+		p.log=paste(prefix,".log",sep="")
+		p.log.log=paste(p.log,".log",sep="")
 		if (file.exists(p.log)) file.copy(p.log,p.log.log,overwrite=TRUE) }
-	p.cmd <- paste(p.exe, paste(argvec,collapse=" "), sep=" ");
-	p.err <- paste("File",p.exe,"does not exist.\n",sep=" ");
+	if (all(argvec==""))
+		p.cmd <- p.exe
+	else
+		p.cmd <- paste(p.exe, paste(argvec,collapse=" ",sep=""), sep=" ")
+
+	p.err <- paste("File",p.exe,"does not exist.\n",sep=" ")
+
 	if (.Platform$OS.type=="windows") {
-		p.cmd=.addQuotes(convSlashes(p.cmd))
+		p.cmd=shQuote(p.cmd)
+		#p.cmd=.addQuotes(convSlashes(p.cmd))
 	}
-	if (file.exists(p.exe)) p.out <- .callSys(p.cmd) else p.out <- p.err;
+	if (file.exists(p.exe)) p.out <- .callSys(p.cmd) else p.out <- p.err
+
 	if (logfile) {
 		if (!add) startLog(prefix)
 		else if (file.exists(p.log.log)) file.copy(p.log.log,p.log,overwrite=TRUE)
 		appendLog(prefix, p.out) }
-	if (verbose) cat(p.out, sep="\n");
-	invisible(p.out); };
+	if (verbose) cat(p.out, sep="\n")
 
-.win.runAD=function(winName="PBSadmb") {
+	invisible(p.out)
+}
+
+.win.runAD=function(winName="PBSadmb")
+{
 	setWinVal(list(Rtime=matrix(NA,nrow=1,ncol=3)),winName=winName)
 	time0=proc.time()[1:3]
 	getWinVal(scope="L",winName=winName)
 	runAD(prefix=prefix,argvec=argvec,logfile=logfile,add=add,verbose=verbose)
 	Ttime=round(proc.time()[1:3]-time0,2)
 	setWinVal(list("Rtime[1,1]"=Ttime[1],"Rtime[1,2]"=Ttime[2],"Rtime[1,3]"=Ttime[3]),winName=winName) 
-	invisible(Ttime) }
+	invisible(Ttime)
+}
 
 runMC <- function(prefix, nsims=2000, nthin=20, outsuff=".mc.dat",
                   logfile=FALSE, add=TRUE, verbose=TRUE) {
-  outf <- paste(prefix,outsuff,sep="");
-  arg1 <- paste("-mcmc",.asIs(nsims),"-mcsave",.asIs(nthin),sep=" ");
-  setWinVal(list(argvec=arg1))
-  arg2 <- "-mceval";
-  runAD(prefix, arg1, logfile=logfile, add=add, verbose=verbose);
-  p.out <- runAD(prefix, arg2, logfile=logfile, add=TRUE, verbose=verbose);
-  writeLines(p.out,outf)
-  invisible(p.out); };
+	outf <- paste(prefix,outsuff,sep="")
 
-.win.runMC=function(winName="PBSadmb") {
+	arg1 <- paste("-mcmc",.asIs(nsims),"-mcsave",.asIs(nthin),sep=" ")
+
+	arg2 <- "-mceval"
+
+	runAD(prefix, arg1, logfile=logfile, add=add, verbose=verbose)
+
+	p.out <- runAD(prefix, arg2, logfile=logfile, add=TRUE, verbose=verbose)
+
+	writeLines(p.out,outf)
+	invisible(p.out)
+}
+
+.win.runMC=function(winName="PBSadmb")
+{
 	time0=proc.time()[1:3]
 	getWinVal(scope="L",winName=winName)
+	arg1 <- paste("-mcmc",.asIs(nsims),"-mcsave",.asIs(nthin),sep=" ")
+
+	setWinVal(list(argvec=arg1))
 	runMC(prefix=prefix,nsims=nsims,nthin=nthin,logfile=logfile,add=add,verbose=verbose)
 	Ttime=round(proc.time()[1:3]-time0,2)
 	setWinVal(list("Rtime[1,1]"=Ttime[1],"Rtime[1,2]"=Ttime[2],"Rtime[1,3]"=Ttime[3]),winName=winName)
-	PBSadmb$useCols<<-NULL
-	invisible(Ttime) }
+	eval(parse(text="PBSadmb$useCols <<- NULL"))
+	invisible(Ttime)
+}
 
-.win.run=function(winName="PBSadmb"){
+.win.run=function(winName="PBSadmb")
+{
 	getWinVal(scope="L",winName=winName)
 	if (runType=="mcmc") .win.runMC()
 	else .win.runAD() 
 	if( .Platform$OS.type == "unix" ) cat("\n> ")
-	invisible()}
+	invisible()
+}
 
 #editADfile-----------------------------2009-02-13
 # Use the specified editor to edit a file.
 #-------------------------------------------JTS/RH
-editADfile <- function(fname) {
-  if (!checkADopts(warn=FALSE)) {cat("Invalid options for PBSadmb\n"); stop()}
-  #f.edit <- paste("start \"\"",.addQuotes(convSlashes(.ADopts$editor)),.addQuotes(convSlashes(fname)),sep=" ");
+editADfile <- function(fname)
+{
+	if (!checkADopts(warn=FALSE)) {cat("Invalid options for PBSadmb\n"); stop()}
+	#f.edit <- paste("start \"\"",.addQuotes(convSlashes(.ADopts$editor)),.addQuotes(convSlashes(fname)),sep=" ");
 	if (.Platform$OS.type=="windows") {
-  f.edit <- paste(.addQuotes(convSlashes(getOptions(.PBSadmb,"editor"))),.addQuotes(convSlashes(fname)),sep=" ");
+		f.edit <- paste(shQuote(getOptions(.PBSadmb,"editor")),shQuote(fname),sep=" ")
+		#f.edit <- paste(.addQuotes(convSlashes(getOptions(.PBSadmb,"editor"))),.addQuotes(convSlashes(fname)),sep=" ")
 	} else {
+		f.edit <- paste(getOptions(.PBSadmb,"editor"),fname,sep=" ")
 
-  f.edit <- paste(getOptions(.PBSadmb,"editor"),fname,sep=" ");
 	}
-  f.err  <- paste("File",fname,"does not exist.\n",sep=" ");
-  if (file.exists(fname)) {.callSys(edit=f.edit, wait=FALSE); cat(f.edit,"\n"); f.out <- TRUE}
-  else {cat(f.err); f.out <- FALSE};
-  return(f.out); };
+	f.err  <- paste("File",fname,"does not exist.\n",sep=" ")
 
-editAD <- function(prefix, suffix=c(".tpl",".cpp",".log")) {
-	npref=length(prefix); nsuff=length(suffix); ed.out=logical(npref*nsuff); k=0
+	if (file.exists(fname)) {
+		.callSys(edit=f.edit, wait=FALSE)
+		cat(f.edit,"\n")
+		f.out <- TRUE
+	} else {
+		cat(f.err)
+		f.out <- FALSE
+	}
+	return(f.out)
+}
+
+editAD <- function(prefix, suffix=c(".tpl",".cpp",".log"))
+{
+	npref=length(prefix)
+	nsuff=length(suffix)
+	ed.out=logical(npref*nsuff)
+	k=0
 	for (i in 1:npref) {
 		for (j in 1:nsuff) {
-			fname=paste(prefix[i],suffix[j],sep=""); k=k+1; ed.out[k]=editADfile(fname) } }
-  return(ed.out) }
+			fname=paste(prefix[i],suffix[j],sep="")
+			k=k+1
+			ed.out[k]=editADfile(fname)
+		}
+	}
+	return(ed.out) }
 
 .win.editAD=function(winName="PBSadmb") {
 	getWinVal(scope="L",winName=winName)
-	editAD(prefix=prefix); invisible() }
+	editAD(prefix=prefix)
+	invisible() }
 .win.editPLT=function() {
 	pref=findPrefix(".plt")
-	editAD(prefix=pref,suffix=".plt"); invisible() }
+	editAD(prefix=pref,suffix=".plt")
+	invisible() }
 
 showADargs <- function(prefix,ed=TRUE) {
 	if( .Platform$OS.type == "windows" )
 		p.exe <- paste(prefix,".exe", sep="")
 	else
 		p.exe <- paste("./", prefix, sep="") #TODO verify
-	# p.exe <- paste(prefix,".exe", sep=""); # JTS: Wrong for Unix; should have been deleted
-	p.arg <- paste(prefix,".arg", sep="");
-	p.err <- paste("File",p.exe,"does not exist.\n",sep=" ");
-	p.cmd <- paste(p.exe,"-?",sep=" ");
-	p.cmd=.addQuotes(convSlashes(p.cmd))
-	if (file.exists(p.exe)) p.out <- .callSys(p.cmd) else p.out <- p.err;
-	if (ed) {writeLines(p.out,p.arg); editADfile(p.arg); }
-	else {cat(paste(p.out,collapse="\n")); cat(paste(p.arg,collapse="\n")) }
-	invisible(p.out) };
+		# p.exe <- paste(prefix,".exe", sep=""); # JTS: Wrong for Unix; should have been deleted
+	p.arg <- paste(prefix,".arg", sep="")
+
+	p.err <- paste("File",p.exe,"does not exist.\n",sep=" ")
+
+	p.cmd <- paste(p.exe,"-?",sep=" ")
+
+	#p.cmd=.addQuotes(convSlashes(p.cmd))
+	p.cmd=shQuote(p.cmd)
+	if (file.exists(p.exe)) p.out <- .callSys(p.cmd) else p.out <- p.err
+
+	if (ed) {writeLines(p.out,p.arg)
+		editADfile(p.arg)
+	} else {
+		cat(paste(p.out,collapse="\n"))
+		cat(paste(p.arg,collapse="\n"))
+	}
+	invisible(p.out) }
 
 .win.showADargs=function(winName="PBSadmb") {
 	getWinVal(scope="L",winName=winName)
@@ -514,17 +1053,27 @@ showADargs <- function(prefix,ed=TRUE) {
 	invisible() }
 
 .win.viewRep=function(winName="PBSadmb") {
-	getWinVal(scope="L",winName=winName); act=getWinAct()[1]
+	getWinVal(scope="L",winName=winName)
+	act=getWinAct()[1]
 	if (!is.null(act) && act=="allnone") {
-		if (allnone==1) {toView=rep(TRUE,length(toView)); pltView=TRUE}
-		if (allnone==0) {toView=rep(FALSE,length(toView)); pltView=FALSE} }
+		if (allnone==1) {
+			toView=rep(TRUE,length(toView))
+			pltView=TRUE
+		}
+		if (allnone==0) {
+			toView=rep(FALSE,length(toView))
+			pltView=FALSE
+		} 
+	}
 	if (!is.null(act) && act=="check") allnone=3
 	setWinVal(list(allnone=allnone,toView=toView,pltView=pltView),winName=winName)
 	if (!is.null(act) && act=="open") {
 		if (sum(toView)>0) {
 			suffix=paste(".",names(toView)[toView],sep="")
-			editAD(prefix,suffix) }
-		if (pltView) .win.editPLT() }
+			editAD(prefix,suffix) 
+		}
+		if (pltView) .win.editPLT() 
+	}
 	invisible() }
 
 #readRep--------------------------------2009-07-09
@@ -541,7 +1090,8 @@ readRep=function(prefix, suffix=c(".cor",".rep",".std",".mc.dat"), global=FALSE)
 				break
 		}	}
 	return(fileformat) }
-	sAF=options()$stringsAsFactors; options(stringsAsFactors=FALSE)
+	sAF=options()$stringsAsFactors
+	options(stringsAsFactors=FALSE)
 	if (missing(prefix) || any(is.null(c(prefix,suffix))) || any(c(prefix,suffix)=="")) return()
 	flist=list()
 	fname=paste(prefix,suffix,sep="")
@@ -551,7 +1101,8 @@ readRep=function(prefix, suffix=c(".cor",".rep",".std",".mc.dat"), global=FALSE)
 		mtime=file.info(i)$mtime  # date & time file was modified/made
 		if (global) cat(paste("     ",i,"\n",sep=""))
 		ii=substring(i,nchar(prefix)+2)
-		contents=dat=readLines(i); ncont=length(contents)
+		contents=dat=readLines(i)
+		ncont=length(contents)
 		ff=findFormat(contents)
 		if (ff=="P") dat=PBSmodelling:::.readList.P(i)
 		else if (ff=="D" || ff=="R") dat=eval(parse(i))
@@ -578,21 +1129,30 @@ readRep=function(prefix, suffix=c(".cor",".rep",".std",".mc.dat"), global=FALSE)
 			#---correlation matrix manipulation---
 			if (ii=="cor") { 
 				ldh=as.numeric(substring(tcont[1],regexpr("=",tcont[1])+1)) # log determinant of hessian
-				name=NULL; NAME=dat[,2]; value=dat[,3]; std=dat[,4]
+				name=NULL
+				NAME=dat[,2]
+				value=dat[,3]
+				std=dat[,4]
 				names(NAME)=1:length(NAME) # to keep the original order after split and sapply
 				ldupe=split(NAME,NAME)
 				ndupe=sapply(ldupe,function(x){
 					if(length(x)>1) {
-						xnam=names(x); len=length(x); npad=ifelse(any(len==10^(0:10)),1,0)
+						xnam=names(x)
+						len=length(x)
+						npad=ifelse(any(len==10^(0:10)),1,0)
 						npad=ceiling(log10(len))+npad
-						x=paste(x,pad0(1:len,npad),sep=""); names(x)=xnam }
-						return(x) },simplify=FALSE)
+						x=paste(x,pad0(1:len,npad),sep="")
+						names(x)=xnam 
+					}
+					return(x) },simplify=FALSE)
 				for (j in names(ndupe)) name=c(name,ndupe[[j]])
 				name=name[order(as.numeric(names(name)))]
 				dat=dat[,setdiff(names(dat),c("index","name","value","std"))]
 				names(dat)=name; row.names(dat)=name
 				dat[is.na(dat)]=t(dat)[is.na(dat)]
-				attr(dat,"determinant")=ldh; attr(dat,"value")=value; attr(dat,"std")=std
+				attr(dat,"determinant")=ldh
+				attr(dat,"value")=value
+				attr(dat,"std")=std
 			} #---end correlation manipulation---
 		}
 		if (ii!="mc.dat") attr(dat,"contents")=contents
@@ -606,14 +1166,17 @@ readRep=function(prefix, suffix=c(".cor",".rep",".std",".mc.dat"), global=FALSE)
 #------------------------------------------readRep
 
 .win.readRep=function(winName="PBSadmb") {
-	getWinVal(scope="L",winName=winName); act=getWinAct()[1]
+	getWinVal(scope="L",winName=winName)
+	act=getWinAct()[1]
 	if (sum(toView)>0) {
 		suffix=paste(".",names(toView)[toView],sep="")
-		readRep(prefix=prefix,suffix=suffix,global=TRUE) }
+		readRep(prefix=prefix,suffix=suffix,global=TRUE) 
+	}
 	if (pltView) {
 		pref=findPrefix(".plt")
 		if (length(pref)>0){
-			for (i in pref) readRep(prefix=i,suffix=".plt",global=TRUE) } }
+			for (i in pref) readRep(prefix=i,suffix=".plt",global=TRUE) } 
+	}
 	invisible() }
 
 #plotMC---------------------------------2009-02-06
@@ -623,24 +1186,31 @@ plotMC=function(prefix,act="pairs",pthin=1,useCols=NULL){
 	if (is.null(prefix) || prefix=="") return()
 	inFile=paste(prefix, ".mc.dat", sep="")
 	if(!file.exists(inFile) || file.info(inFile)$size==0){
-		showAlert(paste("Cannot find file", inFile, "in working directory.")); return() }
+		showAlert(paste("Cannot find file", inFile, "in working directory."))
+		return() 
+	}
 	if (!exists(inFile,envir=.GlobalEnv) || is.null(attributes(get(inFile))$mtime) ||
 			file.info(inFile)$mtime!=attributes(get(inFile))$mtime)
 		inData=readRep(prefix,".mc.dat")
 	else inData=get(inFile)
 	if (nrow(inData)==1) {
 		showAlert(paste("No MCMC data for '",prefix,
-			"'\n\nSpecify an 'mceval_phase()' in your 'tpl' file.",sep="")); return() }
-	x=1:nrow(inData); pthin=max(pthin,1); xthin=seq(1,nrow(inData),pthin)
+			"'\n\nSpecify an 'mceval_phase()' in your 'tpl' file.",sep=""))
+		return() 
+	}
+	x=1:nrow(inData)
+	pthin=max(pthin,1)
+	xthin=seq(1,nrow(inData),pthin)
 	if (pthin>1) inData=inData[xthin,]
 	if (!is.null(useCols)) inData=inData[,useCols]
-	nc=ncol(inData); puce="#cc8899"
+	nc=ncol(inData)
+	puce="#cc8899"
 	clrs=c("blue", "red", "green", "magenta","navy",puce)
 	clrs=rep(clrs,nc)[1:nc]
 	resetGraph()
 	
 	panel=function(x,y) {
-		len=length(x);
+		len=length(x)
 		points(x[2:len],y[2:len],pch=21,col="grey",bg="gainsboro",cex=0.8)
 		points(x[1],y[1],pch=21,bg=puce,cex=1.2)
 	}
@@ -649,22 +1219,27 @@ plotMC=function(prefix,act="pairs",pthin=1,useCols=NULL){
 	if (act=="acf") {
 		expandGraph(mfrow=c(1,1),mar=c(3,3.5,.5,.5))
 		plotACF(inData, clrs=rep(c("blue","red"),nc)[1:nc],lwd=ifelse(nc>6,1,2))
-		mtext("Correlation",side=2,line=2.25,cex=1.2); mtext("Lags",side=1,line=1.5,cex=1) }
+		mtext("Correlation",side=2,line=2.25,cex=1.2)
+		mtext("Lags",side=1,line=1.5,cex=1) 
+	}
 	if (act=="trace") {
 		inData=cbind(x=xthin,inData)
 		expandGraph(mfrow=c(nc,1),mar=c(0,0,0,0),oma=c(4,4.5,.5,.5))
 		for (i in 1:nc) {
 			plotTrace(inData[,c(1,i+1)],clrs=clrs[i],xaxt="n")
 			axis(1,labels=par()$mfg[1]==par()$mfg[3])
-			mtext(names(inData)[i+1],side=2,line=3,cex=1) }
-		mtext("Sequential chain values",side=1,outer=TRUE,line=2,cex=1) }
+			mtext(names(inData)[i+1],side=2,line=3,cex=1) 
+		}
+		mtext("Sequential chain values",side=1,outer=TRUE,line=2,cex=1) 
+	}
 	if (act=="dens") {
 		rc=PBSmodelling:::.findSquare(nc)
 		#sqn=sqrt(nc); m=ceiling(sqn); n=ceiling(nc/m)
 		expandGraph(mfrow=c(rc[1],rc[2]),mar=c(2,2,0,0),oma=c(1,1.75,.5,.5),mgp=c(1.5,.2,0))
 		for (i in 1:nc) {
 			plotDens(inData[,i],clrs=clrs[i]) 
-			addLabel(0.95,0.95,names(inData)[i],adj=c(1,1),cex=1.2) }
+			addLabel(0.95,0.95,names(inData)[i],adj=c(1,1),cex=1.2) 
+		}
 		#normData=sweep(inData,2,apply(inData,2,calcGM),"/")
 		mtext("Kernel Density",outer=TRUE,side=2,line=0.2,cex=1.2) 
 		mtext("Parameter estimates",outer=TRUE,side=1,line=-0.5,cex=1)
@@ -682,16 +1257,20 @@ plotMC=function(prefix,act="pairs",pthin=1,useCols=NULL){
 
 .win.viewCode=function(winName="PBSadmb",pkg="PBSadmb"){
 	getWinVal(scope="L",winName=winName)
-	tdir <- tempdir(); tdir <- gsub("\\\\","/",tdir)  # temporary directory for R
+	tdir <- tempdir()
+	tdir <- gsub("\\\\","/",tdir)  # temporary directory for R
 	pkgN=match(paste("package:",pkg,sep=""),search()) # position number of package
 	pkgO=ls(pos=pkgN) # package objects
-	z=sapply(pkgO,function(x){f=get(x);is.function(f)}); pkgF=names(z)[z] # package functions
+	z=sapply(pkgO,function(x){f=get(x)
+	is.function(f)}); pkgF=names(z)[z] # package functions
 	code=c("# PBSadmb Functions","#------------------")
 	for (i in pkgF) {
 		expr=paste("fun=deparse(",pkg,"::",i,"); fun[1]=paste(\"",i,"\",fun[1],sep=\" = \",collapse=\"\"); code=c(code,fun)",sep="")
-		eval(parse(text=expr)) }
+		eval(parse(text=expr)) 
+	}
 	fname=paste(tdir,"/",pkg,".r",sep="")
-	writeLines(code, fname); editADfile(fname)
+	writeLines(code, fname)
+	editADfile(fname)
 	invisible() }
 
 .asIs=function(x) {
@@ -702,25 +1281,29 @@ plotMC=function(prefix,act="pairs",pthin=1,useCols=NULL){
 # Copy files with specified prefixes and suffixes 
 # from one location to another.
 #-----------------------------------------------RH
-copyFiles=function(prefix,suffix=NULL,dir0=getwd(),dir1=getwd(),ask=TRUE){
+copyFiles=function(prefix,suffix=NULL,srcdir=getwd(),dstdir=getwd(),ask=TRUE){
 	if (missing(prefix)) return()
 	if (is.null(prefix) || prefix=="*") prefix=""
 	if (is.null(suffix) || suffix=="*") suffix=""
 	prefix=gsub("\\.","\\\\\\.",prefix)
 	suffix=gsub("\\.","\\\\\\.",suffix)
-	npref=length(prefix); nsuff=length(suffix)
+	npref=length(prefix)
+	nsuff=length(suffix)
 	fpatt=paste(rep(prefix,each=nsuff),rep(suffix,npref),sep="")
-	fname=sapply(fpatt,function(x,dir){list.files(dir,x,ignore.case=TRUE)},dir=dir0,simplify=FALSE)
-	fname=unique(unlist(fname,use.names=FALSE)); nfile=length(fname)
-	fname=list.files(dir0,pattern=fpatt,ignore.case=TRUE)
+	fname=sapply(fpatt,function(x,dir){list.files(dir,x,ignore.case=TRUE)},dir=srcdir,simplify=FALSE)
+	fname=unique(unlist(fname,use.names=FALSE))
+	nfile=length(fname)
+	fname=list.files(srcdir,pattern=fpatt,ignore.case=TRUE)
 	if (nfile==0) return()
-	copy.out=rep(FALSE,nfile); names(copy.out)=fname
+	copy.out=rep(FALSE,nfile)
+	names(copy.out)=fname
 	for (i in 1:nfile){
-		fnam0=paste(dir0,"/",fname[i],sep="")
-		fnam1=paste(dir1,"/",fname[i],sep="")
+		fnam0=paste(srcdir,"/",fname[i],sep="")
+		fnam1=paste(dstdir,"/",fname[i],sep="")
 		if (!file.exists(fnam1)) {ask=FALSE; ovr=TRUE}
 		if (ask) ovr=getYes(paste("Overwrite",fname[i],"?"))
-		copy.out[i]=file.copy(fnam0,dir1,overwrite=ovr) }
+		copy.out[i]=file.copy(fnam0,dstdir,overwrite=ovr) 
+	}
 	if (exists(".PBSmod",envir=.GlobalEnv) && .PBSmod$.activeWin=="PBSadmb") 
 		setWinVal(list(prefix=substring(prefix,1,nchar(prefix)-2)),winName="PBSadmb")
 	invisible(copy.out) }
@@ -731,30 +1314,25 @@ copyFiles=function(prefix,suffix=NULL,dir0=getwd(),dir1=getwd(),ask=TRUE){
 	getWinVal(scope="L",winName=winName)
 	if (is.null(prefix) || prefix=="")
 		return()
-
 	inFile=paste(prefix, ".mc.dat", sep="")
 	if(!file.exists(inFile)){
-		showAlert(paste("Cannot find file", inFile, "in working directory."));
+		showAlert(paste("Cannot find file", inFile, "in working directory."))
 		return()
 	}
-
 	if (!exists(inFile,envir=.GlobalEnv) || is.null(attributes(get(inFile))$mtime) ||
 			file.info(inFile)$mtime!=attributes(get(inFile))$mtime)
 		inData=readRep(prefix,".mc.dat")
 	else
 		inData=get(inFile)
-	
 	flds=names(inData)
 	nc=length(flds)
 	assign("PBSadmb",PBSadmb)
 	useCols=PBSadmb$useCols
 	if (is.null(useCols) || length(useCols)!=nc)
 		useCols=rep(TRUE,nc)
-
 	#store feilds as a data.frame - for use with scrolling object widget
 	choices <- as.data.frame( useCols )
 	rownames( choices ) <- flds
-
 	#converts data.frame scrolling object back into vector and saves to global var
 	saveCols <- function()
 	{
@@ -763,7 +1341,6 @@ copyFiles=function(prefix,suffix=NULL,dir0=getwd(),dir1=getwd(),ask=TRUE){
 		assign("PBSadmb",PBSadmb,envir=.GlobalEnv)
 		closeWin("chooseCols")
 	}
-
 	toggleSelected <- function()
 	{
 		winName <- "chooseCols" 
@@ -774,7 +1351,6 @@ copyFiles=function(prefix,suffix=NULL,dir0=getwd(),dir1=getwd(),ask=TRUE){
 			choices[[1]] <- choices[[1]] | TRUE #force all true
 		setWinVal( list( choices = choices ), winName = winName )
 	}
-
 	winDesc = c("window name=chooseCols title=Choose",
 		"object choices rowshow=20",
 		"grid 1 2",
@@ -849,8 +1425,11 @@ cleanAD <- function(prefix=NULL) {
 		"button function=.doClean text=Clean bg=aliceblue padx=4 pady=4")
 	createWin(winDesc, astext = TRUE, env=PBSmodelling:::.getHiddenEnv() ) 
 	invisible(TRUE) }
+
 .cleanUpAgain=function(winName="cleanWindow"){
-	cleanAD(getWinVal(winName=winName)$cleanPrefix); invisible() }
+	cleanAD(getWinVal(winName=winName)$cleanPrefix)
+ invisible() }
+
 .win.findClean=function(winName="cleanWindow"){
 	choice=findPrefix(".tpl") 
 	chooseWinVal(choice,"cleanPrefix",winname=winName) 
@@ -862,7 +1441,9 @@ cleanAD <- function(prefix=NULL) {
 .cleanWD=function(files){ # Clean all nuisance files
 	rowLen = ceiling(sqrt(length(files)))
 	if (rowLen == 0) {
-		try(closeWin("cleanWD"),silent=TRUE); return(invisible(FALSE)) }
+		try(closeWin("cleanWD"),silent=TRUE)
+		return(invisible(FALSE)) 
+	}
 	winDesc = c("window name=cleanWD title=Clean",
 		"label text=\"\n\nFiles to Clean\" font=\"bold 9\"",
 		PBSmodelling:::.makeCleanVec("file", files, rowLen),
@@ -894,38 +1475,29 @@ cleanAD <- function(prefix=NULL) {
 #-----------------------------------------------RH
 .win.viewCode=function(pkg="PBSadmb"){
 	eval(parse(text=paste("if(!require(",pkg,",quietly=TRUE)) stop(\"",pkg," package is required\")",sep="")))
-	tdir <- tempdir(); tdir <- gsub("\\\\","/",tdir)                      # temporary directory for R
-	pkgO=ls(paste("package:",pkg,sep=""),all=TRUE)                        # package objects
+	tdir <- tempdir()
+	tdir <- gsub("\\\\","/",tdir)                      # temporary directory for R
+	pkgO=ls(paste("package:",pkg,sep=""),all.names=TRUE)                        # package objects
 	z=sapply(pkgO,function(x){f=get(x);is.function(f)}); pkgF=names(z)[z] # package functions
-	bad=regexpr("[\\|()[{^$*+?<-]",pkgF); pkgF=pkgF[bad<0]                # get rid of weird names
-	if (length(pkgF)==0) {showAlert(paste(pkg,"has no recognizable functions")); return()}
-	dots=regexpr("^\\.",pkgF); pkgF0=pkgF[dots==1]; pkgF1=pkgF[dots!=1]
+	bad=regexpr("[\\|()[{^$*+?<-]",pkgF)
+	pkgF=pkgF[bad<0]                # get rid of weird names
+	if (length(pkgF)==0) {
+		showAlert(paste(pkg,"has no recognizable functions"))
+		return()
+	}
+	dots=regexpr("^\\.",pkgF)
+	pkgF0=pkgF[dots==1]
+	pkgF1=pkgF[dots!=1]
 	code=c(paste("#",pkg,"Functions"),paste("#",paste(rep("-",nchar(pkg)+10),collapse="")))
 	for (i in c(pkgF1,pkgF0)) {
 		expr=paste("fun=deparse(",pkg,"::",i,"); fun[1]=paste(\"",i,"\",fun[1],sep=\" = \",collapse=\"\"); code=c(code,fun)",sep="")
-		eval(parse(text=expr)) }
+		eval(parse(text=expr)) 
+	}
 	fname=paste(tdir,"/",pkg,".r",sep="")
-	writeLines(code, fname); editADfile(fname)
+	writeLines(code, fname)
+	editADfile(fname)
 	invisible() }
 #------------------------------------.win.viewCode
-
-#parseCmd-------------------------------2009-08-11
-# Parse a command for an ADMB command.
-#-----------------------------------------------RH
-parseCmd = function(prefix, index, os=.Platform$OS, comp="GCC", admpath="", gccpath="") {
-	.addSlashes <- function( str ) return( gsub( "\\\\", "\\\\\\\\", str ) )
-	data(ADMBcmd)
-	dat=ADMBcmd; dat$OS=tolower(dat$OS)
-	osdat = dat[dat$OS%in%os & dat$Comp%in%comp,]
-	if(nrow(osdat)==0) stop("No records for specified OS and compiler")
-	idat  = osdat[osdat$Index%in%index,]
-	if(nrow(idat)==0) stop("No records for specified index")
-	cmd=idat$Command[1]
-	cmd=gsub("`","\"",cmd)
-	cmd=gsub("@prefix",.addSlashes(prefix),cmd)
-	cmd=gsub("@adHome",.addSlashes(admpath),cmd)
-	cmd=gsub("@ccPath",.addSlashes(gccpath),cmd)
-	return(cmd) } 
 
 #convOS---------------------------------2009-11-20
 # Convert text files to the default format
@@ -940,6 +1512,34 @@ convOS = function(inam, onam=inam, path=getwd()) {
 	for (i in 1:N) {
 		if(file.exists(inam[i])) {
 			idat=readLines(inam[i])
-			writeLines(idat,con=onam[i]) } }
+			writeLines(idat,con=onam[i]) 
+	} }
+	invisible() }
+
+.changeWD <- function( wd )
+{
+	if( missing( wd ) )
+		wd <- tclvalue(tkchooseDirectory())
+	if( wd != "" ) {
+		currentdir.values <- sort( unique( c( wd, getWinVal()$currentdir.values ) ) )
+		setWinVal( list( currentdir.values = currentdir.values ) )
+		setWinVal( list( currentdir = wd ) )
+		setwd( wd )
+		.load.prefix.droplist()
+	}
+}
+
+#called by droplist when user hits enter
+.changeWDEnter <- function()
+{
+	wd <- getWinVal()$currentdir
+	#remove trailing slash
+	wd <- gsub("(\\\\|/)$", "", wd )
+	if( file.exists( wd ) )
+		.changeWD( wd )
+	else {
+		showAlert( paste( "unable to set working directory to \"", wd, "\" - does not exist", sep="" ) )
+		.changeWD( getwd() )
+	}
 }
 

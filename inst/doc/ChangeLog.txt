@@ -1,5 +1,33 @@
 PBSadmb Changes
 ===============
+Authors:  JTS = Jon T. Schnute
+          RH  = Rowan Haigh
+          ACB = Alex Couture-Beil
+-----------------------------------
+
+0.64  2012-10-31  Authors
+  - Fixed "no visible bindings" nonsense; grabbed new manuals from ADMB-project.org and compacted them with "tools::compactPDF'. (RH 10/31)
+  - Jon changed email address to schnutej-dfo@shaw.ca (RH 10/30)
+  - Exported the '.clean' functions from the namespace. (RH 6/5)
+  - Modified GUI so that user can view the window description file and the project's R code. (RH 6/5)
+  - Modified function 'runAD' to remove trailing whitespace if the executable has no arguments. (RH 6/5)
+  - Advance to version 0.64 for next CRAN release.
+
+0.63  2011-11-24  Authors
+  - Moved '.initOptions' from '.onLoad' to '.onAttach'. (RH 11/24)
+  - Revised UG to reflect new GUI and for eventual upgrading to discuss new install methodology. (RH 11/22)
+  - Altered GUI so that output controls appear on Make and Run tabs. (JTS 11/22)
+  - R-2.14.0 requires namespace and loading via '.onLoad'. (RH 11/10)
+
+0.62  2011-03-15  Authors
+  - Modified function '.load.prefix.droplist' to choose 'vonb' first if it exists. (RH 3/15)
+  - Modified function '.changeWD' to refresh the available 'prefix.values' after changing to a new directory. (RH 3/15)
+  - Modified function '.installADMB' to write any installed directory paths to the 'PBSadmb" GUI. (RH 3/15)
+	Also renamed the Boolean variables 'admb' and 'gcc' to 'chkadmb' and 'chkgcc', respectively.
+  - Added ADM scripts in 'ADMtools' under 'inst' directory (RH 2/22)
+  - Started integrating batch wrappers for PBSadmb (ACB 2/21)
+  - Modified functions 'runMC' and '.win.runMC' so that script version doesn't require GUI. (RH 10/8)
+
 0.61.rxx 2009-12-07 Jon
   - Fixed Linux bug in "All args" button in the GUI (use "prefix", not xxxfs"prefix.exe")
   - Advanced to version 0.61 for CRAN release
