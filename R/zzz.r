@@ -1,6 +1,10 @@
-.onLoad <- function(libname, pkgname)
+# Taking cue from Roger Bivand's maptools:
+.PBSadmbEnv <- new.env(FALSE, parent=globalenv())  # be sure to exportPattern("^\\.PBS") in NAMESPACE
+
+#.onLoad <- function(libname, pkgname)
+.onAttach <- function(libname, pkgname)
 {
-#	.initOptions()
+	.initOptions()
 	pkg_info <- utils::sessionInfo( package="PBSadmb" )$otherPkgs$PBSadmb
 	if( is.character( pkg_info$Packaged ) )
 		pkg_date <- strsplit( pkg_info$Packaged, " " )[[1]][1]
@@ -11,7 +15,7 @@
 	
 	packageStartupMessage("
 -----------------------------------------------------------
-PBS ADMB ", pkg_info$Version, " -- Copyright (C) 2008-2012 Fisheries and Oceans Canada
+PBS ADMB ", pkg_info$Version, " -- Copyright (C) 2008-2013 Fisheries and Oceans Canada
 
 A complete user guide 'PBSadmb-UG.pdf' is located at 
 ", userguide_path, "
@@ -27,13 +31,15 @@ Type admb() to start a GUI for operating ADMB.
 
 ")
 }
-.onAttach = function(libname, pkgname){
-	.initOptions()
+
+.onUnload <- function(libpath) {
+	rm(.PBSadmbEnv)
 }
 
 # No Visible Bindings
 # ===================
 if(getRversion() >= "2.15.1") utils::globalVariables(names=c(
+	".PBSadmb",".PBSadmb.pkgOptions",".PBSmod",
 	"add","admbpath","argvec",
 	"chkadmb","chkgcc",
 	"debugsymbols","digest","dll",
