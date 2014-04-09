@@ -12,10 +12,11 @@
 		pkg_date  <- date()
 	
 	userguide_path <- system.file( "doc/PBSadmb-UG.pdf", package = "PBSadmb" )
+	year <- substring(date(),nchar(date())-3,nchar(date()))
 	
 	packageStartupMessage("
 -----------------------------------------------------------
-PBS ADMB ", pkg_info$Version, " -- Copyright (C) 2008-2013 Fisheries and Oceans Canada
+PBS ADMB ", pkg_info$Version, " -- Copyright (C) 2008-",year," Fisheries and Oceans Canada
 
 A complete user guide 'PBSadmb-UG.pdf' is located at 
 ", userguide_path, "
@@ -40,12 +41,12 @@ Type admb() to start a GUI for operating ADMB.
 # ===================
 if(getRversion() >= "2.15.1") utils::globalVariables(names=c(
 	".PBSadmb",".PBSadmb.pkgOptions",".PBSmod",
-	"add","admbpath","argvec",
+	"add","admbpath","admbver","argvec",
 	"chkadmb","chkgcc",
 	"debugsymbols","digest","dll",
 	"editor",
 	"files",
-	"gccpath",
+	"gccpath","gccver",
 	"isdir",
 	"logfile",
 	"nsims","nthin",

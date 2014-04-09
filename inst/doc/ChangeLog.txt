@@ -4,6 +4,36 @@ Authors:  JTS = Jon T. Schnute
           RH  = Rowan Haigh
           ACB = Alex Couture-Beil
 -----------------------------------
+0.68  2014-04-08
+  - Added a vignette (Kurt indicates that this is sufficient) to satisfy yet another Rcheck that we don't see. (RH 4/8)
+	* checking for code which exercises the package ... WARNING ... No examples, no tests, no vignettes
+  - Jon requested that Rowan becomes the package Maintainer. (RH 3/27)
+  - For PBSadmb we have to IMPORT and DEPEND on PBSmodelling (see DESCRIPTION and NAMESPACE files). (RH 3/20)
+	IMPORT alone cannot find `ComboBox` when `admb()` is called.
+	DEPEND alone causes a NOTE in Rcheck.
+  - Removed direct reliance on `tcltk` by replacing `tclvalue(tkchooseDirectory())` with `selectDir()` in function `.changeWD`. (RH 3/20)
+  - Revised UG for Jon's perusal. (RH 3/3)
+  - Added new function `saveADpaths` to save paths to a 2-column text file. (RH 2/27)
+  - Changed GUI to only recognise the `pathfile` and not the `optfile`. (RH 2/27)
+  - Added new function `setupAD` to initialize and validate the paths to admbpath, gccpath, and editor for command line functions. (JTS/RH 2/26)
+  - Modified GUI to take the new pathfile; created function `.win.readADpaths`. (RH 2/26)
+  - Added new function called `readADpaths` that allows user to supply a simple, 2-column text file of paths for PBSadmb. (RH 2/25)
+  - Modified function `.win.suggestPath` to try default directories for `admbpath` and `gccpath` (after user-specified directories and before PATH directories). (RH 2/20)
+  - Added function `suggestPath` to provide suggestions for `admbpath`, `gccpath`, and `editor` from the system's PATH environment. (RH 2/19)
+  - Added new button `suggest` to the GUI's first notebook tab. (RH 2/19)
+  - Re-arranged order of functions in `PBSadmb.r` source file. (RH 2/19)
+  - Altered code so that Unix systems don't ckeck for msys (unix) tools; some GUI labels altered. (RH 2/18)
+  - Menu Install on GUI now shows all OS users links to three OS installation instructions (Windows, Linux, MacOS). (RH 2/6)
+  - Replaced Install build with pointers to ADMB.org's web pages for Windows, Linux and MacOS. (RH 1/31)
+  - Updated manuals with those from ADMB. (RH 1/31)
+
+0.67  2013-12-19
+  - Changed function `checkADopts` to check for presence of `sed(.exe)` and to provide a warning if not found. (RH 12/19)
+  - Changed code to require that `msys` directory falls directly below `mingw` directory. (RH 12/19)
+  - Created new function called `setADMBVer`; version R objects are now called `admbver` and `gccver`. (RH 12/18)
+  - Revised code to run ADMB 11 which uses `adcomp.cmd` and `adlink.cmd` for ADMB v.11 and `.bat` files for previous versions. (RH 12/17)
+  - .PBSadmb (stored in .PBSadmbEnv) now tracks `ver.admb` and `ver.gcc` (versions). (RH 12/17)
+
 0.66  2013-05-14
   - Fixed Rd usage lines to be less than 90 characters long. (RH 5/18)
 	From Kurt Hornik: A new test gives * checking Rd line widths ... NOTE Rd file 

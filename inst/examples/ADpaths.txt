@@ -1,0 +1,3 @@
+admbpath "C:/admb"
+gccpath  "C:/mingw"
+editor   "C:/Windows/System32/notepad.exe"
