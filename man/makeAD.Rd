@@ -23,7 +23,7 @@ makeAD(prefix, raneff=FALSE, safe=TRUE, dll=FALSE, debug=FALSE,
     relevant paths for the R variables \code{admbpath}, \code{gccpath}, and \code{editor}.}
 }
 \details{
-  This function uses the C++ comiler declared in \code{.ADopts}. If \code{logfile=TRUE},
+  This function uses the C++ comiler declared in \code{.PBSadmb}. If \code{logfile=TRUE},
   any errors will appear in \code{'prefix'.log}. If \code{verbose=TRUE},
   they will appear in the R console.
 }
@@ -31,7 +31,11 @@ makeAD(prefix, raneff=FALSE, safe=TRUE, dll=FALSE, debug=FALSE,
   Returns nothing. The three functions called by \code{makeAD} each 
   return the shell call and its messages.
 }
-\author{ Jon T. Schnute, Pacific Biological Station, Fisheries and Oceans Canada, Nanaimo BC. }
+\author{
+  \href{mailto:schnutej-dfo@shaw.ca}{Jon T. Schnute}, Scientist Emeritus\cr
+  Pacific Biological Station (PBS), Fisheries & Oceans Canada (DFO), Nanaimo BC\cr
+  Last modified \code{Rd: 2015-01-27}
+}
 \note{
   A wrapper function that can be called from a GUI exists as \code{.win.makeAD}.
 

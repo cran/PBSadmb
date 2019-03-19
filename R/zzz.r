@@ -1,7 +1,6 @@
 # Taking cue from Roger Bivand's maptools:
 .PBSadmbEnv <- new.env(FALSE, parent=globalenv())  # be sure to exportPattern("^\\.PBS") in NAMESPACE
 
-#.onLoad <- function(libname, pkgname)
 .onAttach <- function(libname, pkgname)
 {
 	.initOptions()
@@ -25,7 +24,7 @@ Packaged on ", pkg_date, "
 Pacific Biological Station, Nanaimo
 
 All available PBS packages can be found at
-http://code.google.com/p/pbs-software/
+https://github.com/pbs-software/pbs-admb
 
 Type admb() to start a GUI for operating ADMB.
 -----------------------------------------------------------
@@ -49,6 +48,7 @@ if(getRversion() >= "2.15.1") utils::globalVariables(names=c(
 	"gccpath","gccver",
 	"isdir",
 	"logfile",
+	"msysbin",
 	"nsims","nthin",
 	"optfile",
 	"PBSadmb","pltView","prefix","pthin",
